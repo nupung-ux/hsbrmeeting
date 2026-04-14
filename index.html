@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>학운위 실시간 회의 대기실</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* 웹폰트 적용 */
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; background-color: #f8fafc; }
+        .strikethrough { text-decoration: line-through; color: #9ca3af; }
+    </style>
+</head>
+<body class="text-gray-800 antialiased min-h-screen pb-12">
+
+    <!-- Toast 알림 (기본 숨김) -->
+    <div id="toast" class="fixed top-5 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-full shadow-lg transition-opacity duration-300 opacity-0 pointer-events-none z-50 text-sm font-medium">
+        메시지
+    </div>
+
+    <!-- 로딩 오버레이 -->
+    <div id="loading-overlay" class="fixed inset-0 bg-white z-[60] flex flex-col items-center justify-center">
+        <i data-lucide="loader-2" class="w-10 h-10 text-blue-600 animate-spin mb-4"></i>
+        <p class="text-gray-500 font-medium text-sm">연결 중입니다...</p>
+    </div>
+
+    <!-- 확인 모달 (기본 숨김) -->
+    <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 hidden opacity-0 transition-opacity duration-200">
+        <div class="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full mx-4 transform scale-95 transition-transform duration-200" id="confirm-modal-content">
+            <h3 class="text-lg font-bold text-gray-900 mb-2">초기화 확인</h3>
+            <p class="text-sm text-gray-500 mb-6">모든 입력값을 초기화하시겠습니까?<br>이 작업은 되돌릴 수 없습니다.</p>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeConfirmModal()" class="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium transition-colors">취소</button>
+                <button onclick="executeReset()" class="px-4 py-2 text-white bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium transition-colors">초기화</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-3xl mx-auto pt-8 px-4">
+
+        <!-- ================= [A. 설정 화면 (Setup)] ================= -->
+        <section id="setup-view" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8 hidden">
+            <div class="mb-8 border-b pb-4">
+                <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                    <i data-lucide="settings" class="w-6 h-6 text-blue-600"></i>
+                    대기실 설정
+                </h1>
+                <p class="text-sm text-gray-500 mt-1">학운위 회의 정보와 안건을 입력해 주세요.</p>
+            </div>
+
+            <!-- 회의 기본 정보 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">회의명 <span class="text-red-500">*</span></label>
+                    <input type="text" id="meeting-name" placeholder="예: 2024학년도 제1회 학교운영위원회" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">회의 일자 <span class="text-red-500">*</span></label>
+                    <input type="date" id="meeting-date" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors">
+                </div>
+            </div>
+
+            <!-- 안건 관리 -->
+            <div class="mb-4 flex justify-between items-end">
+                <h2 class="text-lg font-semibold text-gray-800">안건 목록</h2>
+                <div class="flex gap-2">
+                    <button onclick="downloadCSVTemplate()" class="text-xs flex items-center gap-1 text-gray-600 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded transition-colors">
+                        <i data-lucide="download" class="w-3 h-3"></i> 양식 다운로드
+                    </button>
+                    <label class="text-xs flex items-center gap-1 text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded transition-colors cursor-pointer">
+                        <i data-lucide="upload" class="w-3 h-3"></i> CSV 업로드
+                        <input type="file" id="csv-upload" accept=".csv" class="hidden">
+                    </label>
+                </div>
+            </div>
+
+            <!-- 안건 리스트 컨테이너 -->
+            <div class="bg-gray-50 rounded-xl border border-gray-200 p-4 mb-6">
+                <div id="agenda-container" class="space-y-3">
+                    <!-- 안건 행이 동적으로 추가됨 -->
+                </div>
+                <button onclick="addAgendaRow()" class="mt-4 w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 font-medium">
+                    <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                    안건 추가
+                </button>
+            </div>
+
+            <!-- 하단 버튼 -->
+            <div class="flex gap-3 justify-end mt-8">
+                <button onclick="resetSetup()" class="px-5 py-2.5 text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium">
+                    초기화
+                </button>
+                <button onclick="createWaitingRoom()" class="px-6 py-2.5 text-white bg-blue-600 rounded-lg hover:bg-blue-700 shadow-sm transition-colors font-medium flex items-center gap-2">
+                    대기실 만들기 <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </section>
+
+        <!-- ================= [B. 대기실 화면 (Dashboard)] ================= -->
+        <section id="dashboard-view" class="hidden">
+            <!-- 상단 헤더 -->
+            <div class="text-center mb-8">
+                <p id="dash-date" class="text-sm font-semibold text-blue-600 mb-1"></p>
+                <h1 id="dash-title" class="text-3xl font-bold text-gray-900 mb-4">대기실</h1>
+                
+                <!-- 관리자용 제어 버튼 -->
+                <div id="admin-controls" class="flex justify-center gap-3">
+                    <button onclick="copyShareLink()" class="flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 transition-colors text-sm font-medium">
+                        <i data-lucide="link" class="w-4 h-4"></i> 공유 링크 복사
+                    </button>
+                    <button onclick="goToSetup()" class="flex items-center gap-1.5 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg shadow-sm hover:bg-gray-50 transition-colors text-sm font-medium">
+                        <i data-lucide="edit" class="w-4 h-4"></i> 설정 수정
+                    </button>
+                </div>
+            </div>
+
+            <!-- 중앙 현재 진행 안건 -->
+            <div class="bg-white rounded-2xl shadow-md border-t-4 border-blue-600 p-8 text-center mb-8 relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-full h-1 bg-blue-100">
+                    <div id="progress-bar" class="h-full bg-blue-600 transition-all duration-500" style="width: 0%"></div>
+                </div>
+                <p class="text-sm font-bold text-gray-500 mb-2 uppercase tracking-wider">현재 진행 중인 안건</p>
+                <div id="current-agenda-display" class="min-h-[100px] flex flex-col justify-center items-center">
+                    <!-- JS로 내용 채워짐 -->
+                </div>
+            </div>
+
+            <!-- 전체 리스트 -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div class="px-6 py-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
+                    <h3 class="font-bold text-gray-800">전체 안건 목록</h3>
+                    <span id="dash-status-count" class="text-sm text-gray-500"></span>
+                </div>
+                <ul id="dash-agenda-list" class="divide-y divide-gray-100">
+                    <!-- JS로 목록 렌더링 -->
+                </ul>
+            </div>
+
+            <div class="mt-6 text-center text-xs text-blue-500 font-medium hidden" id="viewer-notice">
+                <i data-lucide="radio" class="w-3 h-3 inline-block animate-pulse"></i> 실시간으로 화면이 연동되고 있습니다.
+            </div>
+        </section>
+
+    </div>
+
+    <!-- Firebase SDK (ES Modules) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        lucide.createIcons();
+
+        // ------------------ [ Firebase 초기화 ] ------------------
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            // 기본 환경 대응용 빈 객체 (실제 Canvas 환경에서는 자동 주입됨)
+        };
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        // ------------------ [ 글로벌 상태 관리 (State) ] ------------------
+        window.currentUser = null;
+        window.unsubscribeSnapshot = null;
+        
+        // URL에서 정보 파싱
+        const urlParams = new URLSearchParams(window.location.search);
+        window.meetingId = urlParams.get('meetingId');
+        window.isViewer = urlParams.get('role') === 'viewer';
+
+        window.appState = {
+            meetingName: '',
+            meetingDate: '',
+            agendas: []
+        };
+
+        // ------------------ [ 유틸리티 함수 ] ------------------
+        window.showToast = function(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.remove('opacity-0');
+            setTimeout(() => toast.classList.add('opacity-0'), 3000);
+        }
+
+        window.generateId = function() {
+            return Date.now().toString(36) + Math.random().toString(36).substr(2);
+        }
+
+        window.hideLoading = function() {
+            document.getElementById('loading-overlay').classList.add('hidden');
+        }
+
+        // ------------------ [ 인증 및 실시간 리스너 연결 ] ------------------
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch(e) {
+                console.error("인증 오류:", e);
+                window.hideLoading();
+                window.showToast("서버 연결에 실패했습니다.");
+            }
+        };
+
+        onAuthStateChanged(auth, (user) => {
+            window.currentUser = user;
+            if (user) {
+                if (window.meetingId) {
+                    listenToMeeting(); // 기존 방 참여
+                } else {
+                    // 방이 없으면 초기 설정 화면 띄우기
+                    window.appState.agendas = [ { id: window.generateId(), title: '', proposer: '', status: 'waiting' } ];
+                    window.showSetup();
+                    window.hideLoading();
+                }
+            }
+        });
+
+        // 앱 시작
+        initAuth();
+
+        // ------------------ [ 실시간 DB 동기화 ] ------------------
+        function listenToMeeting() {
+            if (!window.currentUser || !window.meetingId) return;
+
+            // Firestore 실시간 리스너 부착
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'meetings', window.meetingId);
+            window.unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+                window.hideLoading();
+                if (docSnap.exists()) {
+                    window.appState = docSnap.data();
+                    window.showDashboard();
+                    window.renderDashboardData();
+                } else {
+                    window.showToast("종료되었거나 존재하지 않는 대기실입니다.");
+                    window.meetingId = null;
+                    window.isViewer = false;
+                    window.showSetup();
+                }
+            }, (error) => {
+                console.error("실시간 동기화 오류:", error);
+                window.hideLoading();
+                window.showToast("실시간 데이터를 불러올 수 없습니다.");
+            });
+        }
+
+        async function syncToCloud() {
+            if (!window.currentUser || !window.meetingId || window.isViewer) return;
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'meetings', window.meetingId);
+            try {
+                await setDoc(docRef, window.appState);
+                // setDoc 성공 시, onSnapshot이 자동으로 화면을 업데이트함
+            } catch(e) {
+                console.error("데이터 저장 실패:", e);
+                window.showToast("변경사항 저장에 실패했습니다.");
+            }
+        }
+
+        // ------------------ [ 화면 전환 로직 ] ------------------
+        window.showSetup = function() {
+            document.getElementById('setup-view').classList.remove('hidden');
+            document.getElementById('dashboard-view').classList.add('hidden');
+            
+            document.getElementById('meeting-name').value = window.appState.meetingName;
+            document.getElementById('meeting-date').value = window.appState.meetingDate;
+            window.renderSetupAgendas();
+        }
+
+        window.showDashboard = function() {
+            document.getElementById('setup-view').classList.add('hidden');
+            document.getElementById('dashboard-view').classList.remove('hidden');
+            
+            // 뷰어(대기자) 모드 UI 처리
+            if (window.isViewer) {
+                document.getElementById('admin-controls').classList.add('hidden');
+                document.getElementById('viewer-notice').classList.remove('hidden');
+            } else {
+                document.getElementById('admin-controls').classList.remove('hidden');
+                document.getElementById('viewer-notice').classList.add('hidden');
+            }
+        }
+
+        // ------------------ [ A. 설정 화면 (Setup) 기능 ] ------------------
+        window.renderSetupAgendas = function() {
+            const container = document.getElementById('agenda-container');
+            container.innerHTML = '';
+            
+            if (window.appState.agendas.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-400 py-4 text-sm">등록된 안건이 없습니다.</p>';
+                return;
+            }
+
+            window.appState.agendas.forEach((agenda, index) => {
+                const row = document.createElement('div');
+                row.className = "flex gap-2 items-start bg-white p-3 rounded-lg border border-gray-200 shadow-sm";
+                row.innerHTML = `
+                    <div class="flex-shrink-0 w-8 h-10 flex items-center justify-center font-bold text-gray-400">${index + 1}</div>
+                    <div class="flex-grow grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <input type="text" placeholder="안건명" value="${agenda.title}" oninput="window.updateAgenda('${agenda.id}', 'title', this.value)" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none text-sm">
+                        <input type="text" placeholder="제안자 성함" value="${agenda.proposer}" oninput="window.updateAgenda('${agenda.id}', 'proposer', this.value)" class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none text-sm">
+                    </div>
+                    <button onclick="window.removeAgendaRow('${agenda.id}')" class="flex-shrink-0 w-10 h-10 flex items-center justify-center text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="삭제">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                `;
+                container.appendChild(row);
+            });
+            lucide.createIcons();
+        }
+
+        window.addAgendaRow = function() {
+            window.appState.agendas.push({ id: window.generateId(), title: '', proposer: '', status: 'waiting' });
+            window.renderSetupAgendas();
+        }
+
+        window.removeAgendaRow = function(id) {
+            window.appState.agendas = window.appState.agendas.filter(a => a.id !== id);
+            window.renderSetupAgendas();
+        }
+
+        window.updateAgenda = function(id, field, value) {
+            const target = window.appState.agendas.find(a => a.id === id);
+            if (target) target[field] = value;
+        }
+
+        window.resetSetup = function() {
+            const modal = document.getElementById('confirm-modal');
+            const content = document.getElementById('confirm-modal-content');
+            modal.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                modal.classList.remove('opacity-0');
+                content.classList.remove('scale-95');
+            });
+        }
+
+        window.closeConfirmModal = function() {
+            const modal = document.getElementById('confirm-modal');
+            const content = document.getElementById('confirm-modal-content');
+            modal.classList.add('opacity-0');
+            content.classList.add('scale-95');
+            setTimeout(() => modal.classList.add('hidden'), 200);
+        }
+
+        window.executeReset = function() {
+            window.closeConfirmModal();
+            window.appState = {
+                meetingName: '',
+                meetingDate: '',
+                agendas: [ { id: window.generateId(), title: '', proposer: '', status: 'waiting' } ]
+            };
+            
+            // 리스너 해제 및 URL 초기화
+            if (window.unsubscribeSnapshot) window.unsubscribeSnapshot();
+            window.meetingId = null;
+            
+            try {
+                window.history.replaceState({}, document.title, window.location.pathname);
+            } catch (e) { console.warn("URL 초기화 제한됨"); }
+            
+            window.showSetup();
+            window.showToast("초기화되었습니다.");
+        }
+
+        window.createWaitingRoom = async function() {
+            const nameInput = document.getElementById('meeting-name').value.trim();
+            const dateInput = document.getElementById('meeting-date').value;
+
+            if (!nameInput) return window.showToast("회의명을 입력해 주세요.");
+            if (!dateInput) return window.showToast("회의 일자를 선택해 주세요.");
+            
+            const validAgendas = window.appState.agendas.filter(a => a.title.trim() !== '' || a.proposer.trim() !== '');
+            if (validAgendas.length === 0) return window.showToast("최소 1개 이상의 안건을 입력해 주세요.");
+
+            window.appState.meetingName = nameInput;
+            window.appState.meetingDate = dateInput;
+            window.appState.agendas = validAgendas;
+            window.isViewer = false;
+
+            // 새 회의 ID 발급
+            if (!window.meetingId) {
+                window.meetingId = window.generateId();
+            }
+
+            document.getElementById('loading-overlay').classList.remove('hidden');
+
+            try {
+                // 클라우드 저장 후 관리자 모드로 전환
+                await syncToCloud();
+                
+                try {
+                    const adminUrl = window.location.pathname + '?meetingId=' + window.meetingId + '&role=admin';
+                    window.history.replaceState({}, document.title, adminUrl);
+                } catch (e) { }
+
+                // 이전에 걸려있던 리스너가 없다면 리스너 부착
+                if (!window.unsubscribeSnapshot) {
+                    listenToMeeting();
+                } else {
+                    window.hideLoading();
+                    window.showDashboard();
+                }
+                window.showToast("대기실이 서버에 생성되었습니다.");
+
+            } catch (err) {
+                window.hideLoading();
+                window.showToast("서버 저장 오류가 발생했습니다.");
+            }
+        }
+
+        // --- CSV 관련 ---
+        window.downloadCSVTemplate = function() {
+            const csvContent = "data:text/csv;charset=utf-8,\uFEFF안건명,제안자\n예시 안건 1,홍길동\n예시 안건 2,김철수";
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "안건_양식.csv");
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        }
+
+        document.getElementById('csv-upload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                const rows = text.split('\n');
+                const newAgendas = [];
+                for(let i=1; i<rows.length; i++) {
+                    if(!rows[i].trim()) continue;
+                    const cols = rows[i].split(',');
+                    if(cols.length >= 2) {
+                        newAgendas.push({ id: window.generateId(), title: cols[0].trim(), proposer: cols[1].trim(), status: 'waiting' });
+                    }
+                }
+                if(newAgendas.length > 0) {
+                    if(window.appState.agendas.length === 1 && window.appState.agendas[0].title === '' && window.appState.agendas[0].proposer === '') {
+                        window.appState.agendas = newAgendas;
+                    } else {
+                        window.appState.agendas = window.appState.agendas.concat(newAgendas);
+                    }
+                    window.renderSetupAgendas();
+                    window.showToast(`${newAgendas.length}개의 안건이 업로드되었습니다.`);
+                }
+            };
+            reader.readAsText(file);
+            this.value = '';
+        });
+
+        // ------------------ [ B. 대기실 화면 (Dashboard) 렌더링 ] ------------------
+        window.renderDashboardData = function() {
+            document.getElementById('dash-title').textContent = `${window.appState.meetingName} 대기실`;
+            document.getElementById('dash-date').textContent = window.appState.meetingDate;
+
+            const listContainer = document.getElementById('dash-agenda-list');
+            listContainer.innerHTML = '';
+
+            let inProgressAgenda = null;
+            let completedCount = 0;
+
+            window.appState.agendas.forEach((agenda, index) => {
+                if(agenda.status === 'in-progress') inProgressAgenda = agenda;
+                if(agenda.status === 'completed') completedCount++;
+
+                const li = document.createElement('li');
+                li.className = "px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors hover:bg-gray-50";
+                
+                // 상태별 스타일 지정
+                let statusBadge = '';
+                let textStyle = 'text-gray-900';
+                let proposerStyle = 'text-gray-600';
+
+                // 대기자(Viewer)일 경우 클릭 이벤트를 비활성화하고 마우스 오버 효과 제거
+                const pointerClass = window.isViewer ? 'cursor-default' : 'cursor-pointer';
+
+                if (agenda.status === 'waiting') {
+                    statusBadge = `<button ${window.isViewer ? 'disabled' : `onclick="window.setInProgress('${agenda.id}')"`} class="min-w-[80px] px-3 py-1.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800 ${!window.isViewer && 'hover:bg-yellow-200 hover:shadow-md transition-all'} ${pointerClass}">대기 중</button>`;
+                } else if (agenda.status === 'in-progress') {
+                    textStyle = 'text-blue-700 font-bold';
+                    proposerStyle = 'text-blue-600 font-medium';
+                    statusBadge = `<button ${window.isViewer ? 'disabled' : `onclick="window.setCompleted('${agenda.id}')"`} class="min-w-[80px] inline-block text-center px-3 py-1.5 rounded-full text-xs font-bold bg-blue-600 text-white animate-pulse shadow-sm ${!window.isViewer && 'hover:bg-blue-700 transition-colors'} ${pointerClass}">진행 중</button>`;
+                } else if (agenda.status === 'completed') {
+                    textStyle = 'strikethrough';
+                    proposerStyle = 'strikethrough';
+                    statusBadge = `<button ${window.isViewer ? 'disabled' : `onclick="window.revertToWaiting('${agenda.id}')"`} class="min-w-[80px] px-3 py-1.5 rounded-full text-xs font-bold bg-gray-600 text-white ${!window.isViewer && 'hover:bg-gray-700 hover:shadow-md transition-all'} ${pointerClass}">완료</button>`;
+                }
+
+                li.innerHTML = `
+                    <div class="flex items-start gap-4 overflow-hidden">
+                        <span class="font-bold text-gray-400 mt-0.5 w-6">${index + 1}</span>
+                        <div>
+                            <p class="${textStyle} text-base md:text-lg mb-1 break-words">${agenda.title}</p>
+                            <p class="${proposerStyle} text-sm flex items-center gap-1">
+                                <i data-lucide="user" class="w-3.5 h-3.5"></i> ${agenda.proposer} 제안
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex-shrink-0 flex justify-end">
+                        ${statusBadge}
+                    </div>
+                `;
+                listContainer.appendChild(li);
+            });
+
+            // 상단 진행바 및 상태 카운트 업데이트
+            const progressPercent = window.appState.agendas.length > 0 ? (completedCount / window.appState.agendas.length) * 100 : 0;
+            document.getElementById('progress-bar').style.width = `${progressPercent}%`;
+            document.getElementById('dash-status-count').textContent = `완료 ${completedCount} / 전체 ${window.appState.agendas.length}`;
+
+            // 중앙 진행 안건 하이라이트 박스 업데이트
+            const displayBox = document.getElementById('current-agenda-display');
+            if (inProgressAgenda) {
+                displayBox.innerHTML = `
+                    <h2 class="text-2xl md:text-4xl font-extrabold text-blue-700 mb-4 break-words leading-tight">${inProgressAgenda.title}</h2>
+                    <div class="inline-flex items-center gap-3 px-6 py-3 bg-blue-50 text-blue-800 rounded-full font-bold border border-blue-200 mb-6 text-xl md:text-2xl shadow-sm">
+                        <i data-lucide="mic" class="w-6 h-6 md:w-8 md:h-8 text-blue-600 animate-pulse"></i>
+                        ${inProgressAgenda.proposer}
+                    </div>
+                    <div class="flex flex-col gap-2 items-center w-full">
+                        <p class="text-sm md:text-base font-bold text-gray-800 bg-blue-50 w-full md:w-3/4 py-3 rounded-xl border border-blue-100 shadow-sm">해당 안건 제안자께서는 회의실로 입장해 주시기 바랍니다.</p>
+                        <p class="text-xs md:text-sm font-medium text-gray-500 mt-1">다음 안건 제안자는 대기실에 대기해 주시기 바랍니다.</p>
+                    </div>
+                `;
+            } else if (completedCount === window.appState.agendas.length && window.appState.agendas.length > 0) {
+                displayBox.innerHTML = `
+                    <h2 class="text-xl text-gray-600 font-bold mb-2">모든 안건이 완료되었습니다.</h2>
+                    <p class="text-sm text-gray-400">수고하셨습니다.</p>
+                `;
+            } else {
+                displayBox.innerHTML = `
+                    <h2 class="text-xl text-gray-400 font-medium">현재 진행 중인 안건이 없습니다.</h2>
+                `;
+            }
+            lucide.createIcons();
+        }
+
+        // [상태 제어 로직] - 실시간 클라우드 연동
+        window.setInProgress = function(id) {
+            if (window.isViewer) return;
+            const target = window.appState.agendas.find(a => a.id === id);
+            if (target && target.status === 'waiting') {
+                const current = window.appState.agendas.find(a => a.status === 'in-progress');
+                if (current) current.status = 'completed';
+                target.status = 'in-progress';
+                syncToCloud(); // 저장하면 onSnapshot이 자동으로 화면을 갱신함
+            }
+        }
+
+        window.setCompleted = function(id) {
+            if (window.isViewer) return;
+            const target = window.appState.agendas.find(a => a.id === id);
+            if (target && target.status === 'in-progress') {
+                target.status = 'completed';
+                syncToCloud();
+            }
+        }
+
+        window.revertToWaiting = function(id) {
+            if (window.isViewer) return;
+            const target = window.appState.agendas.find(a => a.id === id);
+            if (target && target.status === 'completed') {
+                target.status = 'waiting';
+                syncToCloud();
+            }
+        }
+
+        // [링크 복사] - Cloud 연결을 위한 공유 링크 (role=viewer 추가)
+        window.copyShareLink = function() {
+            if (!window.meetingId) return window.showToast("대기실 ID가 없습니다.");
+            
+            const url = window.location.origin + window.location.pathname + '?meetingId=' + window.meetingId + '&role=viewer';
+            
+            const tempInput = document.createElement('input');
+            tempInput.value = url;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+            
+            window.showToast('공유 링크가 복사되었습니다. (대기자들에게 전달해 주세요)');
+        }
+
+        window.goToSetup = function() {
+            window.showSetup();
+            // 참고: 설정으로 돌아가면 자동으로 관리자 모드로 간주하지만 실시간 리스너는 살아있어 수정 시 바로 반영됩니다.
+        }
+
+    </script>
+</body>
+</html>
