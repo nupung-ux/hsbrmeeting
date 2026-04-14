@@ -150,19 +150,24 @@
     <!-- Firebase SDK (ES Modules) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         lucide.createIcons();
 
-        // ------------------ [ Firebase 초기화 ] ------------------
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-            // 기본 환경 대응용 빈 객체 (실제 Canvas 환경에서는 자동 주입됨)
+        // ------------------ [ 선생님 개인 Firebase 초기화 ] ------------------
+        const firebaseConfig = {
+            apiKey: "AIzaSyA0dbHgZjhnU928RRYSjgiO7ynnkOM_QdY",
+            authDomain: "school-meeting-app-83644.firebaseapp.com",
+            projectId: "school-meeting-app-83644",
+            storageBucket: "school-meeting-app-83644.firebasestorage.app",
+            messagingSenderId: "820278862535",
+            appId: "1:820278862535:web:185482f3149d480374d4e2"
         };
+        
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
         // ------------------ [ 글로벌 상태 관리 (State) ] ------------------
         window.currentUser = null;
@@ -195,18 +200,20 @@
             document.getElementById('loading-overlay').classList.add('hidden');
         }
 
+        // DB 경로 생성 함수 (선생님 서버용 깔끔한 경로)
+        function getMeetingDocRef(mId) {
+            return doc(db, 'meetings', mId);
+        }
+
         // ------------------ [ 인증 및 실시간 리스너 연결 ] ------------------
         const initAuth = async () => {
             try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                // 선생님의 개인 Firebase에 익명으로 안전하게 로그인합니다.
+                await signInAnonymously(auth);
             } catch(e) {
                 console.error("인증 오류:", e);
                 window.hideLoading();
-                window.showToast("서버 연결에 실패했습니다.");
+                window.showToast("서버 연결에 실패했습니다. (Firebase Authentication 설정을 확인해주세요)");
             }
         };
 
@@ -231,8 +238,8 @@
         function listenToMeeting() {
             if (!window.currentUser || !window.meetingId) return;
 
-            // Firestore 실시간 리스너 부착
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'meetings', window.meetingId);
+            const docRef = getMeetingDocRef(window.meetingId);
+            
             window.unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
                 window.hideLoading();
                 if (docSnap.exists()) {
@@ -254,7 +261,8 @@
 
         async function syncToCloud() {
             if (!window.currentUser || !window.meetingId || window.isViewer) return;
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'meetings', window.meetingId);
+            
+            const docRef = getMeetingDocRef(window.meetingId);
             try {
                 await setDoc(docRef, window.appState);
                 // setDoc 성공 시, onSnapshot이 자동으로 화면을 업데이트함
