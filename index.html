@@ -47,7 +47,7 @@
             <div class="mb-8 border-b pb-4">
                 <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
                     <i data-lucide="settings" class="w-6 h-6 text-blue-600"></i>
-                    대기실 설정
+                    학운위 대기실 설정
                 </h1>
                 <p class="text-sm text-gray-500 mt-1">학운위 회의 정보와 안건을 입력해 주세요.</p>
             </div>
@@ -220,6 +220,19 @@
         onAuthStateChanged(auth, (user) => {
             window.currentUser = user;
             if (user) {
+                // URL 파라미터가 없을 때 로컬 스토리지에서 마지막으로 생성한 회의 ID 복구
+                if (!window.meetingId) {
+                    const savedId = localStorage.getItem('lastMeetingId');
+                    if (savedId) {
+                        window.meetingId = savedId;
+                        window.isViewer = false; // 개설자 본인이므로 관리자 권한 유지
+                        try {
+                            const adminUrl = window.location.pathname + '?meetingId=' + window.meetingId + '&role=admin';
+                            window.history.replaceState({}, document.title, adminUrl);
+                        } catch (e) { }
+                    }
+                }
+
                 if (window.meetingId) {
                     listenToMeeting(); // 기존 방 참여
                 } else {
@@ -365,7 +378,8 @@
                 agendas: [ { id: window.generateId(), title: '', proposer: '', status: 'waiting' } ]
             };
             
-            // 리스너 해제 및 URL 초기화
+            // 리스너 해제, 로컬 저장소 삭제 및 URL 초기화
+            localStorage.removeItem('lastMeetingId');
             if (window.unsubscribeSnapshot) window.unsubscribeSnapshot();
             window.meetingId = null;
             
@@ -396,6 +410,9 @@
             if (!window.meetingId) {
                 window.meetingId = window.generateId();
             }
+            
+            // 생성한 회의 ID를 로컬 스토리지에 저장 (다시 접속 시 유지되도록 함)
+            localStorage.setItem('lastMeetingId', window.meetingId);
 
             document.getElementById('loading-overlay').classList.remove('hidden');
 
